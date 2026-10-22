@@ -1,11 +1,12 @@
-﻿# System Design & Data Structures
+# System Design, Data Structures & AWS CloudFormation
 
-Tài liệu tổng hợp kiến thức Thiết kế hệ thống (System Design) và Cấu trúc dữ liệu & Giải thuật (DSA) phục vụ học tập và ôn tập phỏng vấn kỹ thuật.
+Tài liệu tổng hợp kiến thức Thiết kế hệ thống (System Design), Cấu trúc dữ liệu & Giải thuật (DSA) và Lập trình hạ tầng đám mây AWS bằng CloudFormation (IaC) phục vụ học tập và thực chiến kỹ thuật.
 
 ## Mục lục tổng quan
 
 - [1. Cấu trúc dữ liệu & Giải thuật (DSA)](#1-cấu-trúc-dữ-liệu--giải-thuật-dsa)
-- [2. Danh mục System Design](#2-danh-mục-system-design)
+- [2. Lập trình hạ tầng AWS CloudFormation (IaC)](#2-lập-trình-hạ-tầng-aws-cloudformation-iac)
+- [3. Danh mục System Design](#3-danh-mục-system-design)
 
 ---
 
@@ -18,7 +19,20 @@ Tài liệu tổng hợp kiến thức Thiết kế hệ thống (System Design)
 
 ---
 
-## 2. Danh mục System Design
+## 2. Lập trình hạ tầng AWS CloudFormation (IaC)
+
+- [Lộ trình học AWS CloudFormation từ A-Z](aws/README.md)
+- [Module 01: Cơ bản về CloudFormation & S3 Bucket](aws/01-fundamentals/README.md)
+- [Module 02: Mạng VPC Multi-AZ (Public/Private Subnets, IGW, NAT)](aws/02-networking-vpc/README.md)
+- [Module 03: Bảo mật IAM Roles & Security Groups phân tầng](aws/03-security-iam/README.md)
+- [Module 04: Máy chủ EC2 & Bootstrapping với UserData](aws/04-compute-ec2/README.md)
+- [Module 05: Cân bằng tải (ALB) & Tự co giãn (Auto Scaling Group)](aws/05-loadbalancing-ha/README.md)
+- [Module 06: Cơ sở dữ liệu RDS MySQL Multi-AZ & File System EFS](aws/06-database-storage/README.md)
+- [Module 07: Dự án thực chiến — Kiến trúc Web 3 tầng (3-Tier Production)](aws/07-production-3tier-project/README.md)
+
+---
+
+## 3. Danh mục System Design
 
 <!-- TOC -->
 

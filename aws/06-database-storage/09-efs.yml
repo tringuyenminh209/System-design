@@ -1,0 +1,87 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Module 06 - Shared Storage: Khởi tạo Amazon Elastic File System (EFS)
+  cho phép nhiều máy chủ EC2 đọc ghi đồng thời (NFSv4) trên nhiều Availability Zones.
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+    Description: Tên môi trường
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: ID của VPC
+
+  WebServerSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: Security Group của Web Servers
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet::Id
+    Description: Private Subnet 1 (AZ a)
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet::Id
+    Description: Private Subnet 2 (AZ c)
+
+Resources:
+  # =========================================================================
+  # 1. SECURITY GROUP CHO EFS
+  # Chỉ mở port NFS 2049 cho Web Servers kết nối
+  # =========================================================================
+  EFSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group cho EFS Mount Targets
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          SourceSecurityGroupId: !Ref WebServerSecurityGroupId
+          Description: Cho phep NFS port 2049 tu Web Servers
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-efs-sg"
+
+  # =========================================================================
+  # 2. EFS FILE SYSTEM
+  # =========================================================================
+  SharedFileSystem:
+    Type: AWS::EFS::FileSystem
+    Properties:
+      Encrypted: true # Ma hoa du lieu luu tru
+      PerformanceMode: generalPurpose
+      ThroughputMode: bursting
+      LifecyclePolicies:
+        - TransitionToIA: AFTER_30_DAYS # Tu dong chuyen file it dung sang tang re hon sau 30 ngay
+      FileSystemTags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-shared-efs"
+
+  # =========================================================================
+  # 3. MOUNT TARGETS (Diem gan o dia o tung Subnet)
+  # =========================================================================
+  MountTarget1:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref SharedFileSystem
+      SubnetId: !Ref PrivateSubnet1
+      SecurityGroups:
+        - !Ref EFSSecurityGroup
+
+  MountTarget2:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref SharedFileSystem
+      SubnetId: !Ref PrivateSubnet2
+      SecurityGroups:
+        - !Ref EFSSecurityGroup
+
+Outputs:
+  FileSystemId:
+    Description: ID cua EFS File System
+    Value: !Ref SharedFileSystem
+    Export:
+      Name: !Sub "${EnvironmentName}-FileSystemId"

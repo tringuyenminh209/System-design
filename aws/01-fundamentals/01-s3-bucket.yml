@@ -1,0 +1,76 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Module 01 - CloudFormation Fundamentals: Khởi tạo S3 Bucket bảo mật với Parameters, Conditions và Outputs.
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+    Description: Môi trường triển khai (dev, staging, prod)
+
+  BucketPrefix:
+    Type: String
+    Default: my-secure-app-data
+    AllowedPattern: ^[a-z0-9\-]+$
+    Description: Tiền tố tên Bucket (chỉ dùng chữ thường, số và dấu gạch ngang)
+
+  EnableVersioning:
+    Type: String
+    Default: 'true'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: Bật tính năng lưu phiên bản tệp tin (Versioning)
+
+Conditions:
+  IsVersioningEnabled: !Equals [!Ref EnableVersioning, 'true']
+
+Resources:
+  SecureStorageBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain # Giữ lại dữ liệu kể cả khi xóa Stack
+    UpdateReplacePolicy: Retain
+    Properties:
+      # S3 Bucket name phải là duy nhất trên toàn cầu: kết hợp prefix, env, accountId và region
+      BucketName: !Sub "${BucketPrefix}-${EnvironmentName}-${AWS::AccountId}-${AWS::Region}"
+      
+      # Cấu hình lưu phiên bản
+      VersioningConfiguration:
+        Status: !If [IsVersioningEnabled, Enabled, Suspended]
+        
+      # Mã hóa dữ liệu lưu trữ ở tầng server (SSE-S3)
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+              
+      # Chặn 100% truy cập công khai (Best practice bảo mật AWS)
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+        
+      # Gắn nhãn quản trị chi phí
+      Tags:
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: ManagedBy
+          Value: CloudFormation
+
+Outputs:
+  BucketName:
+    Description: Tên của S3 Bucket vừa tạo
+    Value: !Ref SecureStorageBucket
+    Export:
+      Name: !Sub "${EnvironmentName}-AppBucketName"
+
+  BucketArn:
+    Description: ARN đầy đủ của S3 Bucket
+    Value: !GetAtt SecureStorageBucket.Arn
+    Export:
+      Name: !Sub "${EnvironmentName}-AppBucketArn"

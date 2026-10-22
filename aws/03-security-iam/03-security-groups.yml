@@ -1,0 +1,103 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Module 03 - Security Groups: Xây dựng hệ thống Security Groups phân tầng
+  (ALB SG -> Web Server SG -> Database SG) theo nguyên tắc đặc quyền tối thiểu (Least Privilege).
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+    Description: Tên môi trường
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: ID của VPC (hoặc dùng !ImportValue nếu tách riêng Stack)
+
+Resources:
+  # =========================================================================
+  # 1. SECURITY GROUP CHO LOAD BALANCER (ALB)
+  # Nhận traffic HTTP/HTTPS từ toàn bộ Internet
+  # =========================================================================
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group cho Public Application Load Balancer
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: Cho phep HTTP tu Internet
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: Cho phep HTTPS tu Internet
+      SecurityGroupEgress:
+        - IpProtocol: -1 # Cho phép gửi traffic tới mọi nơi (Target Group)
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-alb-sg"
+
+  # =========================================================================
+  # 2. SECURITY GROUP CHO WEB / APP SERVERS (EC2)
+  # CHỈ chấp nhận traffic từ ALB Security Group (Không mở ra Internet)
+  # =========================================================================
+  WebServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group cho EC2 Web Server instances
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref ALBSecurityGroup # CHI CHAP NHAN TRAFFIC TU ALB
+          Description: Nhan HTTP forward tu Load Balancer
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-webserver-sg"
+
+  # =========================================================================
+  # 3. SECURITY GROUP CHO DATABASE (RDS)
+  # CHỈ chấp nhận port 3306 (MySQL) từ WebServerSecurityGroup
+  # =========================================================================
+  DatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group cho RDS MySQL Database
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref WebServerSecurityGroup # CHI WEB SERVER MOI DUOC KET NOI
+          Description: Ket noi MySQL database tu App/Web Servers
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-database-sg"
+
+Outputs:
+  ALBSecurityGroupId:
+    Description: Security Group ID cua ALB
+    Value: !Ref ALBSecurityGroup
+    Export:
+      Name: !Sub "${EnvironmentName}-ALBSecurityGroupId"
+
+  WebServerSecurityGroupId:
+    Description: Security Group ID cua Web Servers
+    Value: !Ref WebServerSecurityGroup
+    Export:
+      Name: !Sub "${EnvironmentName}-WebServerSecurityGroupId"
+
+  DatabaseSecurityGroupId:
+    Description: Security Group ID cua Database
+    Value: !Ref DatabaseSecurityGroup
+    Export:
+      Name: !Sub "${EnvironmentName}-DatabaseSecurityGroupId"

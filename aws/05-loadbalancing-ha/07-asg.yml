@@ -1,0 +1,118 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Module 05 - Auto Scaling: Tự động co giãn (Auto Scaling Group) kết hợp Launch Template
+  và chính sách Target Tracking Scaling dựa trên mức sử dụng CPU (70%).
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+    Description: Tên môi trường
+
+  LatestAmiId:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64'
+    Description: AMI Linux mới nhất từ SSM
+
+  InstanceType:
+    Type: String
+    Default: t3.micro
+    Description: Loại máy chủ EC2
+
+  WebServerSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: Security Group cho Web Server (chỉ nhận traffic từ ALB)
+
+  TargetGroupArn:
+    Type: String
+    Description: ARN của ALB Target Group để đăng ký các máy chủ tự động
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet::Id
+    Description: Private Subnet 1 (AZ a)
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet::Id
+    Description: Private Subnet 2 (AZ c)
+
+Resources:
+  # =========================================================================
+  # 1. LAUNCH TEMPLATE (Bản thiết kế mẫu cho máy chủ)
+  # =========================================================================
+  WebLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub "${EnvironmentName}-web-launch-template"
+      LaunchTemplateData:
+        InstanceType: !Ref InstanceType
+        ImageId: !Ref LatestAmiId
+        SecurityGroupIds:
+          - !Ref WebServerSecurityGroupId
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            dnf update -y
+            dnf install -y httpd
+            systemctl start httpd
+            systemctl enable httpd
+            
+            TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+            INSTANCE_ID=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id)
+            AZ=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/availability-zone)
+            
+            cat <<EOF > /var/www/html/index.html
+            <h1>Auto Scaling EC2 Instance</h1>
+            <p>Instance ID: $INSTANCE_ID</p>
+            <p>Zone: $AZ</p>
+            EOF
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: !Sub "${EnvironmentName}-asg-instance"
+
+  # =========================================================================
+  # 2. AUTO SCALING GROUP
+  # =========================================================================
+  WebAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Sub "${EnvironmentName}-web-asg"
+      LaunchTemplate:
+        LaunchTemplateId: !Ref WebLaunchTemplate
+        Version: !GetAtt WebLaunchTemplate.LatestVersionNumber
+      MinSize: 2
+      MaxSize: 4
+      DesiredCapacity: 2
+      # Đặt máy chủ vào các Private Subnet trên cả 2 AZ để đảm bảo High Availability
+      VPCZoneIdentifier:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      # Đăng ký máy chủ tự động vào ALB Target Group
+      TargetGroupARNs:
+        - !Ref TargetGroupArn
+      # Giám sát sức khỏe dựa trên kiểm tra của Load Balancer
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 300 # Chờ 5 phút cho UserData chạy xong trước khi kiểm tra lỗi
+      Tags:
+        - Key: Environment
+          Value: !Ref EnvironmentName
+          PropagateAtLaunch: true
+
+  # =========================================================================
+  # 3. CHÍNH SÁCH CO GIÃN TỰ ĐỘNG (Target Tracking Scaling Policy)
+  # =========================================================================
+  CPUUtilizationScalingPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref WebAutoScalingGroup
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ASGAverageCPUUtilization
+        TargetValue: 70.0 # Khi CPU trung bình vượt quá 70%, tự động thêm máy chủ
+
+Outputs:
+  AutoScalingGroupName:
+    Description: Tên của Auto Scaling Group
+    Value: !Ref WebAutoScalingGroup

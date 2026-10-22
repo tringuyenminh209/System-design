@@ -1,0 +1,92 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Module 06 - Database: Khởi tạo RDS MySQL Multi-AZ bảo mật trong Private Subnets
+  kèm DBSubnetGroup và DeletionPolicy tự động tạo Snapshot trước khi xóa.
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+    Description: Tên môi trường
+
+  DBName:
+    Type: String
+    Default: appdb
+    Description: Tên cơ sở dữ liệu ban đầu
+
+  DBUser:
+    Type: String
+    Default: admin
+    Description: Tên tài khoản quản trị database
+
+  DBPassword:
+    Type: String
+    NoEcho: true # Bảo mật: Không in mật khẩu ra log hoặc console
+    Default: Password123456!
+    Description: Mật khẩu quản trị database (tối thiểu 8 ký tự)
+
+  DatabaseSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: Security Group cho RDS (chỉ nhận port 3306 từ Web Server)
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet::Id
+    Description: Private Subnet 1 (AZ a)
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet::Id
+    Description: Private Subnet 2 (AZ c - Bắt buộc tối thiểu 2 AZs cho RDS Subnet Group)
+
+Resources:
+  # =========================================================================
+  # 1. DB SUBNET GROUP (Tập hợp các Subnet an toàn cho RDS chạy)
+  # =========================================================================
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnet Group cho RDS dat trong Private Subnets
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-db-subnet-group"
+
+  # =========================================================================
+  # 2. RDS MYSQL INSTANCE (Multi-AZ)
+  # =========================================================================
+  RDSInstance:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot # Nếu lỡ tay xóa Stack, AWS sẽ tự động chụp lại 1 bản Backup
+    Properties:
+      DBInstanceIdentifier: !Sub "${EnvironmentName}-mysql-db"
+      DBName: !Ref DBName
+      Engine: mysql
+      EngineVersion: '8.0'
+      DBInstanceClass: db.t3.micro
+      AllocatedStorage: '20'
+      StorageType: gp3
+      MultiAZ: true # Tự động tạo bản sao đồng bộ ở AZ thứ hai (High Availability)
+      PubliclyAccessible: false # Tuyệt đối KHÔNG mở ra internet
+      MasterUsername: !Ref DBUser
+      MasterUserPassword: !Ref DBPassword
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VPCSecurityGroups:
+        - !Ref DatabaseSecurityGroupId
+      BackupRetentionPeriod: 7 # Lưu bản sao lưu tự động trong 7 ngày
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-rds-mysql"
+
+Outputs:
+  DBEndpoint:
+    Description: Địa chỉ Endpoint kết nối vào database
+    Value: !GetAtt RDSInstance.Endpoint.Address
+    Export:
+      Name: !Sub "${EnvironmentName}-DBEndpoint"
+
+  DBPort:
+    Description: Cổng kết nối database
+    Value: !GetAtt RDSInstance.Endpoint.Port
+    Export:
+      Name: !Sub "${EnvironmentName}-DBPort"

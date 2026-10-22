@@ -1,0 +1,118 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Module 04 - EC2 Computing: Khởi tạo máy chủ EC2 tự động cấu hình Web Server (Apache/Nginx)
+  thông qua UserData và tự động tra cứu Amazon Linux 2023 AMI mới nhất bằng SSM Parameter.
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+    Description: Tên môi trường
+
+  InstanceType:
+    Type: String
+    Default: t3.micro
+    AllowedValues:
+      - t3.micro
+      - t3.small
+      - t3.medium
+    Description: Loại máy chủ EC2 (t3.micro thuộc diện Free Tier)
+
+  # Tra cuu tu dong AMI moi nhat cua Amazon Linux 2023 tu AWS Systems Manager Parameter Store
+  LatestAmiId:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64'
+    Description: SSM Parameter Store chua ID cua AMI Linux moi nhat
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: ID cua VPC
+
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: ID cua Public Subnet muon dat EC2
+
+Resources:
+  # Security Group cho EC2 doc lap (cho phep HTTP tu internet de test truc tiep)
+  StandaloneEC2SG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group cho EC2 Web Server doc lap
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: Cho phep truy cap HTTP port 80
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-standalone-ec2-sg"
+
+  # Khoi tao EC2 Instance
+  WebServerInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !Ref LatestAmiId
+      SubnetId: !Ref SubnetId
+      SecurityGroupIds:
+        - !Ref StandaloneEC2SG
+      # Script UserData khoi chay ngay khi may chu boot lan dau
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          # Cap nhat he dieu hanh
+          dnf update -y
+          # Cai dat Apache Web Server
+          dnf install -y httpd
+          systemctl start httpd
+          systemctl enable httpd
+          
+          # Lay metadata cua may chu (Token based IMDSv2)
+          TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+          INSTANCE_ID=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id)
+          AZ=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/availability-zone)
+          
+          # Tao trang chu HTML hien thi thong tin he thong
+          cat <<EOF > /var/www/html/index.html
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>AWS CloudFormation Web Server</title>
+            <style>
+              body { font-family: Arial, sans-serif; background: #f4f6f8; text-align: center; padding: 50px; }
+              .card { background: white; border-radius: 8px; padding: 30px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: inline-block; }
+              h1 { color: #ff9900; }
+              p { font-size: 18px; color: #333; }
+              .badge { background: #232f3e; color: white; padding: 5px 10px; border-radius: 4px; }
+            </style>
+          </head>
+          <body>
+            <div class="card">
+              <h1>🚀 Chuc mung! May chu EC2 da hoat dong</h1>
+              <p>Khoi tao tu dong bang <strong>AWS CloudFormation</strong></p>
+              <hr/>
+              <p><strong>Instance ID:</strong> <span class="badge">$INSTANCE_ID</span></p>
+              <p><strong>Availability Zone:</strong> <span class="badge">$AZ</span></p>
+              <p><strong>Environment:</strong> ${EnvironmentName}</p>
+            </div>
+          </body>
+          </html>
+          EOF
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-web-server"
+
+Outputs:
+  InstanceId:
+    Description: ID cua may chu EC2
+    Value: !Ref WebServerInstance
+
+  PublicIp:
+    Description: Dia chi IP Public cua may chu
+    Value: !GetAtt WebServerInstance.PublicIp
+
+  WebsiteURL:
+    Description: Duong dan web truy cap truc tiep vao may chu
+    Value: !Sub "http://${WebServerInstance.PublicIp}"

@@ -1,0 +1,76 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Module 03 - IAM Roles: Tạo IAM Role & Instance Profile chuẩn bảo mật cho EC2.
+  Cho phép EC2 kết nối qua AWS Systems Manager (SSM - không cần mở port SSH 22)
+  và cấp quyền đọc ghi vào S3, đẩy logs lên CloudWatch.
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+    Description: Tên môi trường
+
+Resources:
+  # =========================================================================
+  # 1. IAM ROLE CHO EC2
+  # =========================================================================
+  EC2AppRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${EnvironmentName}-ec2-app-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com # Chi cho phep dich vu EC2 assume role nay
+            Action:
+              - sts:AssumeRole
+      # Gan cac policy chuan cua AWS
+      ManagedPolicyArns:
+        # Giup ket noi vao EC2 qua trinh duyet (SSM Session Manager) khong can mo port SSH 22
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        # Cho phep day log he thong len CloudWatch Logs
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+      # Custom Policy: Cap quyen lam viec voi S3
+      Policies:
+        - PolicyName: S3AppStorageAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub "arn:aws:s3:::*-${EnvironmentName}-${AWS::AccountId}-${AWS::Region}"
+                  - !Sub "arn:aws:s3:::*-${EnvironmentName}-${AWS::AccountId}-${AWS::Region}/*"
+      Tags:
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  # =========================================================================
+  # 2. INSTANCE PROFILE
+  # Cau noi de gan IAM Role vao EC2 Instance
+  # =========================================================================
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub "${EnvironmentName}-ec2-instance-profile"
+      Roles:
+        - !Ref EC2AppRole
+
+Outputs:
+  EC2RoleArn:
+    Description: ARN cua IAM Role
+    Value: !GetAtt EC2AppRole.Arn
+    Export:
+      Name: !Sub "${EnvironmentName}-EC2RoleArn"
+
+  EC2InstanceProfileName:
+    Description: Ten Instance Profile dung khi khai bao EC2 hoac Launch Template
+    Value: !Ref EC2InstanceProfile
+    Export:
+      Name: !Sub "${EnvironmentName}-EC2InstanceProfileName"

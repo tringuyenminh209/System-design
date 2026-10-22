@@ -57,12 +57,12 @@ function generateMarkdownList() {
   let markdown = ''
   
   categories.forEach(category => {
-    markdown += `* [${category.title}](https://bytebytego.com/guides/${category.id})\n`
+    markdown += `* [${category.title}](data/categories/${category.id}.md)\n`
     
     const categoryGuides = guides.filter(guide => guide.categories.includes(category.id))
     if (categoryGuides.length > 0) {
       categoryGuides.forEach(guide => {
-        markdown += `  * [${guide.title}](https://bytebytego.com/guides/${guide.id})\n`
+        markdown += `  * [${guide.title}](data/guides/${guide.id}.md)\n`
       })
     }
   })
